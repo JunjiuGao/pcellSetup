@@ -1,0 +1,415 @@
+import klayout.db as pya
+import pandas as pd
+from functools import wraps
+import traceback
+import os,sys,re
+dbu=0.001
+layerMapPath = r"D:\02_Work\00_Technical\01_TechFile\HIDM_65nm_logic_CIS_layermapping.xlsx"
+layout=pya.Layout()
+layout.dbu=dbu
+
+def dbu2um(dbuValue: int):
+    umValue=round(dbuValue*dbu,4)
+    return umValue
+def um2dbu(umValue: float):
+    dbuValue=int(round(umValue/dbu))
+    return dbuValue
+
+class DesignRule():
+    class node45():
+        class AA():
+            def __init__(self):
+                self.IO_minimumWidth=0.32
+        class GT():
+            def __init__(self):
+                self.IO_minimumWidth=0.06
+        class NW():
+            def __init__(self):
+                self.EN_pActive=0.008
+
+class LayerMapping():
+    layout=layout
+    layerMapPath=layerMapPath
+    def __init__(self,*args,**kwargs):
+        layerIterator=iter(range(1,1025))
+        self.AA=next(layerIterator)
+        self.GT=next(layerIterator)
+        self.NP=next(layerIterator)
+        self.PP=next(layerIterator)
+        self.NW=next(layerIterator)
+        self.DNW=next(layerIterator)
+        self.V0=next(layerIterator)
+        self.M1=next(layerIterator)
+        self.V1=next(layerIterator)
+        self.M2=next(layerIterator)
+        self.V2=next(layerIterator)
+        self.M3=next(layerIterator)
+        self.V3=next(layerIterator)
+        self.M4=next(layerIterator)
+        self.V4=next(layerIterator)
+        self.M5=next(layerIterator)
+        self.V5=next(layerIterator)
+        self.M6=next(layerIterator)
+        self.getLayerNameDicts()
+        if os.path.isabs(layerMapPath):
+            self.loadLayerMap(layerMapPath)
+
+    def getLayerNameDicts(self):
+        (Namedict,layerdict) = ({},{})
+        for (key, value) in self.__dict__.items():
+            if isinstance(value,int):
+                (Namedict[key],layerdict[value]) = (value,key)
+                # print((value,key))
+        self.Name2LayerDict=Namedict
+        self.Layer2NameDict=layerdict
+
+    def loadLayerMap(self,path:str):
+        self.layout=self.layout
+        if path[-4:] in ["xlsx","xlsm"]:
+            df=pd.read_excel(path)
+            df.index=df["Index"]
+            for (localName,layer) in self.Name2LayerDict.items():
+                if re.match("^M\d+$",localName)!=None:
+                    layerName="M"+str(localName[1:])
+                elif re.match("^V\d+",localName)!=None:
+                    layerName="V"+str(localName[1:])
+                else:
+                    layerName = localName
+                try:
+                    numStr = str(df["Number"][layerName])
+                except IndexError as e:
+                    print("%s is not found in target Layermapping file."%(localName))
+                else:
+                    numStrSplits = numStr.split(";")
+                    numStrSplits.append("HelpIndex")
+                    isZeroType = (re.match("\d+\;\d+", numStr, re.I) == None)
+                    num = [int(numStrSplits[0]), int(numStr)][isZeroType]
+                    datatype = [numStrSplits[1], 0][isZeroType]
+                    setattr(self,localName,self.layout.layer(num,datatype))
+                finally:
+                    pass
+        self.getLayerNameDicts()
+        return df
+
+class Utility():
+    def __init__(self):
+        pass
+
+    class Match():
+        def __init__(self):
+            pass
+
+        def rekwargsValueByKey(self,keypattern:str,i=True,**kwargs):
+            result=None
+            for (key,value) in kwargs.items():
+                if not i:
+                    hasValue=re.match(keypattern,key)!=None
+                else:
+                    hasValue=re.match(keypattern,key,re.I)!=None
+                result=[result, value][hasValue]
+                if result!=None:
+                    break
+            return result
+
+    def placeCell2Target(self):
+        pass
+
+    def mergeLayout(self):
+        pass
+
+    def handleInstArrayAttrs(self,args: tuple=(),kwargs:dict={}):
+        if len(args)>=5:
+            if not isinstance(args[0],pya.Trans):
+                raise Exception("1st Attribute need to be Class pya.Trans!!")
+            elif not isinstance(args[1],float):
+                raise Exception("2nd Attribute need to be Class float (Xpicth)!!")
+            elif not isinstance(args[2],int):
+                raise Exception("3rd Attribute need to be Class Int!!")
+            elif not isinstance(args[3],float):
+                raise Exception("4th Attribute need to be Class float (Ypicth)!!")
+            elif not isinstance(args[4],int):
+                raise Exception("5th Attribute need to be Class Int!!")
+            else:
+                (trans,a,na,b,nb)=(args[0],args[1],args[2],args[3],args[4])
+        elif len(args)==1 and isinstance(args[0],pya.Trans):
+            trans=args[0]
+            (a, na, b, nb) = (pya.Vector(0,0),1,pya.Vector(0,0),1)
+        elif len(args) == 1 and not isinstance(args[0], pya.Trans):
+            raise Exception("only 1ea tuple Attribute is given, it should be a pya.Trans Class!!")
+        elif len(args)==0:
+            (r90, mirrorX, x, y) = (0, False, 0, 0)
+            (xPitch, xNum, yPitch, yNum) = (0, 1, 0, 1)
+            for (key, value) in kwargs.items():
+                x = [x, value][re.match("^x$", key, re.I) != None]
+                y = [y, value][re.match("^y$", key, re.I) != None]
+                r90 = [r90, value][re.match("r(otate)?90?", key, re.I) != None]
+                mirrorX = [mirrorX, value][re.match("x_?mirror|mirror_?x", key, re.I) != None]
+                xPitch = [xPitch, value][re.match("x_?pitch|pitch_?x", key, re.I) != None]
+                yPitch = [yPitch, value][re.match("y_?pitch|pitch_?y", key, re.I) != None]
+                xNum = [xNum, value][re.match("x_?num|num_?x", key, re.I) != None]
+                yPitch = [yPitch, value][re.match("y_?num|num?y", key, re.I) != None]
+            trans = pya.Trans(r90, mirrorX, x, y)
+            (a, na, b, nb) = (pya.Vector(xPitch, 0),xNum, pya.Vector(0, yPitch),yNum)
+        else:
+            raise Exception("tuple should have 0ea or 1ea or 5ea Attributes: e.g (Number: valueType): "
+                            "\n1: pya.Trans"
+                            "\n5: [pya.Trans,pya.Vector,int,pya.Vector,int")
+        return (trans,a,na,b,nb)
+
+class Tool(Utility):
+    util= Utility()
+    def __init__(self):
+        super().__init__()
+        pass
+
+    def Trans(self,*args):
+        if len(args)==0:
+            (x,y,mirrorX,r90)=(0,0,False,0)
+        elif len(args)==1:
+            (x,y,mirrorX,r90)=(um2dbu(args[0]),0,False,0)
+        elif len(args)==2:
+            (x,y,mirrorX,r90)=(um2dbu(args[0]),um2dbu(args[1]),False,0)
+        elif len(args)==3:
+            (x,y,mirrorX,r90)=(um2dbu(args[0]),um2dbu(args[1]),args[2],0)
+        elif len(args)==4:
+            (x,y,mirrorX,r90)=(um2dbu(args[0]),um2dbu(args[1]),args[2],args[3])
+        trans=pya.Trans(r90,mirrorX,x,y)
+        return trans
+
+    def Array(self,*args):
+        if len(args)<=1:
+            (xPitch,xNum,yPitch,yNum)=(0,1,0,1)
+        elif len(args)<=3:
+            (xPitch, xNum, yPitch, yNum) = (um2dbu(args[0]),args[1],0, 1)
+        else:
+            (xPitch, xNum, yPitch, yNum)=(um2dbu(args[0]),args[1],um2dbu(args[2]),args[3])
+        (a,na,b,nb)=(pya.Vector(xPitch,0),xNum,pya.Vector(0,yPitch),yNum)
+        return (a,na,b,nb)
+
+    def Box(self,cell:pya.Cell,layer:int,width,height,left=0,bottom=0):
+        box=pya.DBox().new(left,bottom,left+width,bottom+height)
+        shapes=cell.shapes(layer)
+        shapes.insert(box)
+        return box
+
+    def Path(self,cell:pya.Cell,layer:int,width:float,*args):
+        dPoints=[]
+        for xy in args:
+            dPoints.append(pya.DPoint(xy[0],xy[1]))
+        path=pya.DPath().new(dPoints,width)
+        shapes=cell.shapes(layer)
+        shapes.insert(path)
+        return path
+
+    def Instance(self,sourceCell: pya.Cell,*args,**kwargs):
+        # print(args)
+        targetCell=None
+        trans=pya.Trans(0,False,0,0)
+        for (key,value) in kwargs.items():
+            targetCell=[targetCell,value][re.match("target|target",key,re.I)!=None]
+            trans=[trans,value][re.match("trans",key,re.I)!=None]
+        if len(args)<4:
+            args=self.Array(*args)
+        (a,na,b,nb)=(args[0],args[1],args[2],args[3])
+        # print(sourceCell.name,(a,na,b,nb))
+        cellInst=pya.CellInstArray(sourceCell.cell_index(),trans,a,b,na,nb)
+        if targetCell!=None and isinstance(targetCell,pya.Cell):
+                targetCell.insert(cellInst)
+        return cellInst
+
+class Generator(LayerMapping,Tool,Utility):
+    def __init__(self,*args,**kwargs):
+        super().__init__(*args,**kwargs)
+        prefix=self.Match().rekwargsValueByKey("prefix",**kwargs)
+        self.prefix=[prefix,""][prefix==None]
+        suffix=self.Match().rekwargsValueByKey("suffix",**kwargs)
+        self.suffix=[suffix,""][suffix==None]
+        self.generateInstCell()
+
+    def generateInstCell(self):
+        # print("this is generator instance!")
+        self.instCellName=self.prefix+self.__class__.__name__+self.suffix
+        self.layout.create_cell(self.instCellName)
+        self.instCell=self.layout.cell(self.instCellName)
+        # print("this is generator End!")
+
+    def funcInstCell(self,func):
+        funcName=getattr(func,'__name__')
+        self.layout.create_cell(funcName)
+        self.funcCell=self.layout.cell(funcName)
+
+    def viaInst(self,viaLayer:int,*args,**kwargs):
+        # print(args)
+        (width,height)=(kwargs["width"],kwargs["height"])
+        cellName=self.Layer2NameDict[viaLayer]+"_"+str(int(width*1000)%1000)+"X"+str(int(height*1000)%1000)
+        if self.layout.cell(cellName)==None:
+            self.layout.create_cell(cellName)
+        self.Box(self.layout.cell(cellName),layer=viaLayer,width=width,height=height,left=-0.5*width,bottom=-0.5*height)
+        via_Inst=self.Instance(self.layout.cell(cellName),*args,**kwargs)
+        return via_Inst
+
+class InstanceLib(Generator):
+    def __init__(self,lm:LayerMapping,**kwargs):
+        self.lm=lm
+        self.layout=self.lm.layout
+        tool = Tool()
+        for (key,value) in kwargs.items():
+            tool=[Tool(),value][re.match("tool",key,re.I)!=None]
+        self.tool=tool
+
+    def _ViaCell(self,*targetCell,**kwCellAttr):
+        (sizeXpatten, sizeYpatten) = ("(V.+)?(size_?X|width)", "(V.+)?(size_?Y|height)")
+        viaNumpatten="(V.*)?(num|index|layer)"
+        (sizeX, sizeY) = (0.02, 0.02)
+        viaNum=-1
+        for (key,value) in kwCellAttr.items():
+            sizeX=[sizeX,value][re.match(sizeXpatten,key,re.I)!=None]
+            sizeY=[sizeY,value][re.match(sizeYpatten,key,re.I)!=None]
+            viaNum=[viaNum,value][re.match(viaNumpatten,key,re.I)!=None]
+        if viaNum==-1:
+            raise Exception("No 'viaNum='(type int) is given for function._ViaCell(),e.g. give viaNum= 1 for V1!!")
+        viaLayer=self.lm.Name2LayerDict["V%d"%viaNum]
+        cellName="Via%d_%dx%d"%(viaNum,int(1000*sizeX),int(1000*sizeY))
+        if self.layout.cell(cellName)==None:
+            self.layout.create_cell(cellName)
+        else:
+            pass
+        cell = self.layout.cell(cellName)
+        self.tool.Box(cell=cell,layer=viaLayer,width=sizeX,height=sizeY)
+        cellInst=self.tool.Instance(self.layout.cell(cellName),targetCell=targetCell[0],kwCellAttr=kwCellAttr)
+        return cellInst
+
+    def coreDevice(self,cellname:str,**kwCellAttr):
+        (gateWPattern,gateLPattern)=("(gate?|ch(annel)?)_?w(idth)?$","(gate?|ch(annel)?)_?l(ength)?$")
+        (gateWidth,gateLength)=(0.06,0.009)
+        for (key,value) in kwCellAttr.items():
+            gateWidth=[gateWidth,value][re.match(gateWPattern,value,re.I)!=None]
+            gateLength=[gateLength,value][re.match(gateLPattern,value,re.I)!=None]
+        return None
+
+class AddressableIP(Generator):
+    def __init__(self,*args,**kwargs):
+        super().__init__(*args,**kwargs)
+
+class PcellLib(Generator):
+    '''
+    This Class is built to setup Pcell library,some tips are as below:
+    1. Class internal layout should be same to target cell;
+    2. All calculations are used by dbu, pls convert um to dbu by function um2dbu;
+    '''
+    pcellTopName="PcellTOP"
+    def __init__(self,*args,**kwargs):
+        super().__init__(*args,**kwargs)
+        self.cellNameDict_PcellName_Suffixs={}
+        self.pcellTopCell=self.layout.cell(self.pcellTopName)
+
+    def _getUploadCellName(self,key,attrbutes: tuple):
+        nameDict=self.cellNameDict_PcellName_Suffixs
+        if key in nameDict.keys():
+            valueList=nameDict[key]
+            if attrbutes in valueList:
+                index=valueList.index(attrbutes)
+            else:
+                index=len(valueList)
+        else:
+            valueList=[]
+            index=0
+        cellName = (key, key + self.seperator + ("000" + str(index) + 1)[-3:])[index != 0]
+        valueList.append(attrbutes)
+        self.cellNameDict_PcellName_Suffixs[key]=valueList
+        return cellName
+
+    class and4(Generator):
+        def __init__(self):
+            super().__init__()
+            self.GateW=0.32
+            self.GateL=0.06
+            self.GT_yEx_AA=0.11
+            self.GT_T2T_S=0.11
+            self.GT_length=2*self.GT_yEx_AA+self.GateW
+            self.Gate_Pitch=0.14
+            self.AA_Sy=0.11
+            self.cellInst()
+
+        def cellInst(self):
+            print(self.instCellName)
+            (nwEnAA_X,nwEnAA_Y)=(0.08,0.08)
+            ySpace=max(self.AA_Sy,2*self.GT_yEx_AA+self.GT_T2T_S)
+            yPitch=self.GateW+ySpace
+            nwWidth=self.Gate_Pitch*6+nwEnAA_X*2
+            nwHeight=0.5*ySpace+self.GateW+nwEnAA_Y
+            self.Instance(self.instCell)
+            (gateX,gateY)=(-0.5*self.GateL,-self.GT_yEx_AA)
+            gateInst=self.Instance(self.gateCell(),*self.Array(self.Gate_Pitch,7,yPitch,2)
+                                   ,targetcell=self.instCell,trans=self.Trans(gateX,gateY))
+            AAInst=self.Instance(self.AAcell(),*self.Array(0,1,yPitch,2),targetcell=self.instCell)
+            self.Box(self.instCell,self.PP,width=nwWidth,height=nwHeight,left=-nwEnAA_X,bottom=-nwEnAA_Y)
+            self.Box(self.instCell,self.NW,width=nwWidth,height=nwHeight,left=-nwEnAA_X,bottom=-nwEnAA_Y)
+            self.Box(self.instCell,self.NP,width=nwWidth,height=nwHeight,left=-nwEnAA_X,bottom=nwHeight-nwEnAA_Y)
+            viaInst1=self.viaInst(self.V0,*self.Array(0,1,0,1),width=0.06,height=0.06
+                         ,targetcell=self.instCell,trans=self.Trans(0.5*self.Gate_Pitch,0.5*self.GateW))
+            viaInst2=self.viaInst(self.V0,width=0.06,height=0.06
+                         ,targetcell=self.instCell,trans=self.Trans(4.5*self.Gate_Pitch,0.5*self.GateW))
+            viaInst3=self.viaInst(self.V0,width=0.06,height=0.06,targetcell=self.instCell
+                                  ,trans=self.Trans(1.5*self.Gate_Pitch,1.5*self.GateW+ySpace))
+            viaInst4=self.viaInst(self.V0,width=0.06,height=0.06,targetcell=self.instCell
+                                  ,trans=self.Trans(3.5*self.Gate_Pitch,1.5*self.GateW+ySpace))
+            M1Width=0.06
+            M1Path1=self.Path(self.instCell,self.M1,M1Width,*((0.5*self.Gate_Pitch,0.97)
+                           ,(0.5*self.Gate_Pitch,0.6)
+                           ,(2.5*self.Gate_Pitch,0.6)
+                           ,(2.5*self.Gate_Pitch,0.97-0.5*M1Width)
+                           ,(2.5*self.Gate_Pitch,0.6)
+                           ,(4.5*self.Gate_Pitch,0.6)
+                           ,(4.5*self.Gate_Pitch,0.97)
+                           ))
+
+        def gateCell(self):
+            super().funcInstCell(self.gateCell)
+            self.Box(self.funcCell,layer=self.GT,width=self.GateL,height=self.GT_length)
+            return self.funcCell
+
+        def AAcell(self):
+            super().funcInstCell(self.AAcell)
+            self.Box(self.funcCell,layer=self.AA,width=self.Gate_Pitch*6,height=self.GateW)
+            return self.funcCell
+
+    # def topcell(self):
+        #     self.layout.create_cell(self.instCellName)
+        #     topcell=self.layout.cell(self.instCellName)
+        #     trans=pya.Trans(0,True,1000,1000)
+        #     unitInst=self.unit(trans)
+        #     topcell.insert(unitInst)
+        #     cellInst=self.Instance(self.layout.cell(self.instCellName))
+        #     return cellInst
+        #
+        # def unit(self,*args):
+        #     # print(args[0])
+        #     cellName=self.instCellName+"_"+sys._getframe().f_code.co_name
+        #     self.layout.create_cell(cellName)
+        #     # self.InstanceLib._ViaCell(self.layout.cell(cellName),viaNum=1,width=0.03,height=0.04)
+        #     args=self.handleInstArrayAttrs(args=args)
+        #     # print(args[0])
+        #     cellInst=self.Instance(self.layout.cell(cellName),*args)
+        #     return cellInst
+
+class Test(Generator):
+    def __init__(self,*args,**kwargs):
+        print("this is %s in Test_start"%(args[0]))
+        super().__init__(*args,**kwargs)
+        print("this is %s in Test_End." % (args[0]))
+
+    def instance(self):
+        print("this is Test instance!")
+        super().instance()
+        print("this is Test End!")
+
+# print(re.match("(V.+)?(size_?Y|height)","height",re.I)!=None)
+if __name__ == '__main__':
+    # t=Test("Hello")
+    # t.loadLayerMap(layerMapPath,layout)
+    # t.instance()
+    pcell=PcellLib()
+    coreDevice=pcell.and4()
+    # coreDevice.topcell()
+    pcell.layout.write(r"C:\Users\高俊九\Desktop\gds_generate\test2.gds")
